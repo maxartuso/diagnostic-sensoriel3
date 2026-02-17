@@ -90,25 +90,46 @@ def enregistrer_reponse(q_id, phrase, cat, intensite, rep, precision):
 
 
 # --- LOGIQUE RAPPORT ---
-def generer_rapport_docx():
+def generer_rapport_docx(patient_id, date_naiss, age, reponses_vrai):
     doc = Document()
-    doc.add_heading(f"RAPPORT : {st.session_state.selected_cat_name.upper()}", 0)
-    doc.add_paragraph(f"Patient ID: {st.session_state.patient_id} | Age: {st.session_state.age} ans")
+    doc.add_heading(f"Diagnostic Sensoriel", 0)
+    doc.add_paragraph(f"Date de naissance : {date_naiss}")
+    doc.add_paragraph(f"Âge lors de l'examen : {age} ans")
 
-    if not st.session_state.reponses_vrai:
-        doc.add_paragraph("Aucune observation notée.")
+    doc.add_heading("Récapitulatif des réponses 'Vrai'", level=1)
+
+    if not reponses_vrai:
+        doc.add_paragraph("Aucune réponse 'Vrai' enregistrée.")
     else:
-        for item in st.session_state.reponses_vrai:
-            p = doc.add_paragraph(style='List Bullet')
-            p.add_run(f"{item['phrase']}").bold = True
-            mats = get_materiel_eligible(item['id'], st.session_state.age)
-            if mats:
-                doc.add_paragraph(f"   Préconisation : {', '.join([m[0] for m in mats])}", style='Caption')
+        categories = sorted(list(set(r['categorie'] for r in reponses_vrai)))
+        materiels_globaux = {}
 
-    buffer = BytesIO()
-    doc.save(buffer)
-    buffer.seek(0)
-    return buffer
+        for cat in categories:
+            doc.add_heading(f"Catégorie : {cat}", level=2)
+            items_cat = [r for r in reponses_vrai if r['categorie'] == cat]
+            for item in items_cat:
+                p = doc.add_paragraph(style='List Bullet')
+                p.add_run(f"{item['phrase']}").bold = True
+                p.add_run(f" (Intensité : {item['intensite']})")
+                if item['precision']:
+                    doc.add_paragraph(f"   Précision : {item['precision']}")
+
+                mats = get_materiel_eligible(item['id'], age)
+                if mats:
+                    doc.add_paragraph(f"   Matériel : {', '.join([m[0] for m in mats])}")
+                    for m_nom, m_site in mats:
+                        materiels_globaux[m_nom] = m_site
+
+        if materiels_globaux:
+            doc.add_page_break()
+            doc.add_heading("Liste globale du matériel", level=1)
+            for nom, site in materiels_globaux.items():
+                doc.add_paragraph(f"{nom} (Site : {site})")
+
+    target = BytesIO()
+    doc.save(target)
+    return target.getvalue()
+
 
 
 # --- INTERFACE PRINCIPALE ---
@@ -161,7 +182,7 @@ def main():
             c1, c2, c3 = st.columns(3)
             c1.button("✅ Vrai", on_click=enregistrer_reponse, args=(q_id, phrase, cat, intensite, "Vrai", precision))
             c2.button("❌ Faux", on_click=enregistrer_reponse, args=(q_id, phrase, cat, intensite, "Faux", precision))
-            c3.button("❓ ?", on_click=enregistrer_reponse, args=(q_id, phrase, cat, intensite, "Inconnu", precision))
+            c3.button("❓ Ne sais pas", on_click=enregistrer_reponse, args=(q_id, phrase, cat, intensite, "Inconnu", precision))
         else:
             st.session_state.step = 'final'
             st.rerun()
